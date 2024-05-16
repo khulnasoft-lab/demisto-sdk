@@ -12,7 +12,7 @@ from demisto_sdk.commands.common.constants import (
     NEO4J_DIR,
 )
 from demisto_sdk.commands.common.docker_helper import init_global_docker_client
-from demisto_sdk.commands.common.logger import logger
+from demisto_sdk.commands.common.logger import logger, logging_setup
 from demisto_sdk.commands.content_graph.common import (
     NEO4J_DATABASE_HTTP,
     NEO4J_PASSWORD,
@@ -63,6 +63,7 @@ def _is_apoc_available(plugins_path: Path, sha1: str) -> bool:
 
 
 def _download_apoc():
+    logger.debug(f"Searching and APOC plugin matching Neo4j {NEO4J_VERSION}")
     apocs = [
         apoc
         for apoc in requests.get(APOC_URL_VERSIONS, verify=False).json()
@@ -80,11 +81,13 @@ def _download_apoc():
         logger.debug("APOC is already available, skipping installation")
         return
     logger.info("Downloading APOC plugin, please wait...")
+    logger.debug(f"Downloading APOC plugin from {download_url}, {sha1=}")
     # Download APOC_URL and save it to plugins folder in neo4j
     response = requests.get(download_url, verify=False, stream=True)
 
     with open(plugins_folder / "apoc.jar", "wb") as f:
         f.write(response.content)
+    logger.debug("Done downloading apoc.jar")
 
 
 def _docker_start():
@@ -140,6 +143,8 @@ def start():
     if not is_running_on_docker():
         logger.debug("Neo4j is running locally. Start manually")
         return
+
+    logging_setup()
 
     NEO4J_DIR.mkdir(exist_ok=True, parents=True)
     # we download apoc only if we are running on docker
