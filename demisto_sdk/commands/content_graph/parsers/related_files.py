@@ -3,6 +3,7 @@ from abc import ABC
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, List, Optional, Union
+from PIL import Image
 
 from demisto_sdk.commands.common.constants import (
     AUTHOR_IMAGE_FILE_NAME,
@@ -216,6 +217,10 @@ class PNGFiles(ImageFiles):
                 encoded_image = encoded_image.decode("utf-8")
         return encoded_image
 
+    def get_file_dimensions(self):
+        with Image.open(self.file_path) as img:
+            width, height = img.size
+            return width, height
 
 class SVGFiles(ImageFiles):
     def load_image(self) -> bytes:
