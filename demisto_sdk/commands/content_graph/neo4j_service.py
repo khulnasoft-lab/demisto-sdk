@@ -12,7 +12,7 @@ from demisto_sdk.commands.common.constants import (
     NEO4J_DIR,
 )
 from demisto_sdk.commands.common.docker_helper import init_global_docker_client
-from demisto_sdk.commands.common.logger import logger
+from demisto_sdk.commands.common.logger import logger, logging_setup
 from demisto_sdk.commands.content_graph.common import (
     NEO4J_DATABASE_HTTP,
     NEO4J_PASSWORD,
@@ -29,6 +29,7 @@ NEO4J_PLUGINS_FOLDER = "plugins"
 # When updating the APOC version, make sure to update the checksum as well
 APOC_URL_VERSIONS = "https://neo4j.github.io/apoc/versions.json"
 
+logging_setup()
 
 class Neo4jServiceException(Exception):
     pass
