@@ -234,3 +234,23 @@ class Integration(IntegrationScript, content_type=ContentType.INTEGRATION):  # t
                 or self.is_fetch_samples
             )
         )
+
+
+class StrictIntegration(Integration):
+    is_fetch: bool = Field(..., alias="isfetch")
+    is_fetch_events: bool = Field(..., alias="isfetchevents")
+    is_fetch_assets: bool = Field(..., alias="isfetchassets")
+    is_fetch_events_and_assets: bool
+    is_fetch_samples: bool
+    is_feed: bool
+    is_beta: bool
+    is_remote_sync_in: bool
+    is_mappable: bool
+    long_running: bool
+    category: str
+    commands: List[Command] = Field(..., alias="commands")
+    params: List[Parameter] = Field(..., exclude=True, alias="params")
+
+
+class OtherStrictIntegration(Integration):
+    ...

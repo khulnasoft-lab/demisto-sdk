@@ -1,6 +1,9 @@
+from collections import defaultdict
 import os
-from typing import List, Optional, Set
+from pathlib import Path
+from typing import DefaultDict, List, Optional, Set
 
+from demisto_sdk.commands.common.files.json_file import JsonFile
 from demisto_sdk.commands.common.handlers import DEFAULT_JSON_HANDLER as json
 from demisto_sdk.commands.common.logger import logger
 from demisto_sdk.commands.content_graph.objects.base_content import BaseContent
@@ -21,7 +24,8 @@ class ResultWriter:
 
     def __init__(
         self,
-        json_file_path: Optional[str] = None,
+        json_path: Optional[Path] = None,
+        junit_path: Optional[Path] = None,
     ):
         """
             The ResultWriter init method.
@@ -34,14 +38,70 @@ class ResultWriter:
         self.validation_caught_exception_results: List[
             ValidationCaughtExceptionResult
         ] = []
-        if json_file_path:
-            self.json_file_path = (
-                os.path.join(json_file_path, "validate_outputs.json")
-                if os.path.isdir(json_file_path)
-                else json_file_path
+
+        if json_path and json_path.is_dir():
+            json_path = json_path / "validate_outputs.json"
+        self.json_path = json_path
+
+        self.junit_path = junit_path
+
+    def write_junit(self):
+        from junitparser.junitparser import (
+            Error,
+            Failure,
+            JUnitXml,
+            TestCase,
+            TestSuite,
+        )
+
+        errors: DefaultDict[BaseContent, list] = defaultdict(list)
+
+        for failure in self.validation_results + self.fixing_results:
+            errors[failure.content_object].append(
+                Failure(message=failure.format_readable_message)
             )
-        else:
-            self.json_file_path = ""
+
+        for error in self.validation_caught_exception_results:
+            if not error.content_object:
+                logger.warning(
+                    f"no content item for error {error!s}, not writing it to Junit file"
+                )
+                continue
+
+            errors[error.content_object].append(
+                Error(message=f"{error.format_readable_message}")
+            )
+        xml = JUnitXml()
+
+        for content_item, results in errors.items():
+            suite = TestSuite(f"{content_item.content_type} {content_item.object_id}")
+            suite.add_testcases(results)
+            xml.add_testsuite(suite)
+            
+        # Create cases
+        case1 = TestCase("case1", "class.name", 0.5)  # params are optional
+        case1.classname = "modified.class.name"  # specify or change case attrs
+        case1.result = [Skipped()]  # You can have a list of results
+        case2 = TestCase("case2")
+        case2.result = [Error("Example error message", "the_error_type")]
+
+        # Create suite and add cases
+        suite = TestSuite("suite1")
+        suite.add_property("build", "55")
+        suite.add_testcase(case1)
+        suite.add_testcase(case2)
+        suite.remove_testcase(case2)
+
+        # Bulk add cases to suite
+        case3 = TestCase("case3")
+        case4 = TestCase("case4")
+        suite.add_testcases([case3, case4])
+
+        # Add suite to JunitXml
+        xml = JUnitXml()
+        xml.add_testsuite(suite)
+        xml.write("junit.xml")
+        suite = TestSuite()
 
     def post_results(
         self,
@@ -57,8 +117,11 @@ class ResultWriter:
         """
         fixed_objects_set: Set[BaseContent] = set()
         exit_code = 0
-        if self.json_file_path:
-            self.write_results_to_json_file()
+        if self.json_path:
+            self.write_json()
+        if self.junit_path:
+            self.write_junit()
+
         for result in self.validation_results:
             if only_throw_warning and result.validator.error_code in only_throw_warning:
                 logger.warning(f"[yellow]{result.format_readable_message}[/yellow]")
@@ -85,11 +148,14 @@ class ResultWriter:
             fixed_object.save()
         return exit_code
 
-    def write_results_to_json_file(self):
+    def write_json(self):
         """
         If the json path argument is given,
         Writing all the results into a json file located in the given path.
         """
+        if self.json_path is None:
+            raise ValueError("Validate JSON output path was not supplied")
+
         json_validations_list = [
             result.format_json_message for result in self.validation_results
         ]
@@ -110,11 +176,7 @@ class ResultWriter:
             "Validations that caught exceptions": json_validation_caught_exception_list,
         }
 
-        json_object = json.dumps(results, indent=4)
-
-        # Writing to sample.json
-        with open(self.json_file_path, "w") as outfile:
-            outfile.write(json_object)
+        JsonFile.write(results, self.json_path, indent=4)
 
     def append_validation_results(self, validation_result: ValidationResult):
         """Append an item to the validation results list.

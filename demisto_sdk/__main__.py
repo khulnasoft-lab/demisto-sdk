@@ -914,7 +914,7 @@ def validate(ctx, config, file_paths: str, **kwargs):
             exit_code += validator.run_validation()
         if run_new_validate:
             validation_results = ResultWriter(
-                json_file_path=kwargs.get("json_file"),
+                json_path=kwargs.get("json_file"),
             )
             config_reader = ConfigReader(
                 config_file_path=kwargs.get("config_path"),

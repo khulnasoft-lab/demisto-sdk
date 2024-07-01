@@ -331,10 +331,10 @@ def test_write_results_to_json_file(results, fixing_results, expected_results):
         mode="w", delete=False, suffix=".json"
     ) as temp_file:
         temp_file_path = temp_file.name
-        validation_results = ResultWriter(json_file_path=temp_file_path)
+        validation_results = ResultWriter(json_path=temp_file_path)
         validation_results.validation_results = results
         validation_results.fixing_results = fixing_results
-        validation_results.write_results_to_json_file()
+        validation_results.write_json()
         with open(temp_file_path, "r") as file:
             loaded_data = json.load(file)
             assert loaded_data == expected_results
