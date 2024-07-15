@@ -213,6 +213,7 @@ def main(ctx, config, version, release_notes, **kwargs):
         log_file_path=kwargs.get("log_file_path"),
         skip_log_file_creation=True,  # Log file creation is handled in the logger setup of the sub-command
     )
+    raise FileNotFoundError
     handle_deprecated_args(ctx.args)
 
     config.configuration = Configuration()
