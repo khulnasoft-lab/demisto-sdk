@@ -6,3 +6,13 @@ mapping:
   breakingChangesNotes:
     type: str
     required: false
+  marketplaces:
+    type: seq
+    required: false
+    sequence:
+    - type: str
+      enum: ['xsoar', 'marketplacev2', 'xpanse', 'xsoar_saas', 'xsoar_on_prem', 'platform']
+  supportedModules:
+    type: seq
+    sequence:
+    - type: str

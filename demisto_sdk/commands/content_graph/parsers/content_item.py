@@ -2,11 +2,11 @@ from abc import ABCMeta, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Type, cast
 
-import pydantic
 from packaging.version import Version
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from demisto_sdk.commands.common.constants import (
+    DEFAULT_SUPPORTED_MODULES,
     MARKETPLACE_MIN_VERSION,
     PACK_DEFAULT_MARKETPLACES,
     MarketplaceVersions,
@@ -19,9 +19,6 @@ from demisto_sdk.commands.content_graph.common import (
     RelationshipType,
 )
 from demisto_sdk.commands.content_graph.parsers.base_content import BaseContentParser
-from demisto_sdk.commands.content_graph.strict_objects.base_strict_model import (
-    StructureError,
-)
 
 
 class NotAContentItemException(Exception):
@@ -86,38 +83,20 @@ class ContentItemParser(BaseContentParser, metaclass=ParserMetaclass):
         self,
         path: Path,
         pack_marketplaces: List[MarketplaceVersions] = PACK_DEFAULT_MARKETPLACES,
+        pack_supported_modules: List[str] = DEFAULT_SUPPORTED_MODULES,
         git_sha: Optional[str] = None,
     ) -> None:
         self.pack_marketplaces: List[MarketplaceVersions] = pack_marketplaces
+        self.pack_supported_modules: List[str] = pack_supported_modules
         super().__init__(path)
         self.relationships: Relationships = Relationships()
         self.git_sha: Optional[str] = git_sha
-        # The validate_structure method is called in the first child(JsonContentItem, YamlContentItem)
-        self.structure_errors: Optional[List[StructureError]] = None
-
-    @property
-    @abstractmethod
-    def raw_data(self) -> dict:
-        pass
-
-    def validate_structure(self) -> Optional[List[StructureError]]:
-        """
-        The method uses the parsed data and attempts to build a Pydantic object from it.
-        Whenever data is invalid by the schema, we store the error in the 'structure_errors' attribute,
-        It will fail validation (ST110).
-        """
-        if not self.strict_object:
-            return None  # TODO - remove it
-        try:
-            self.strict_object(**self.raw_data)
-        except pydantic.error_wrappers.ValidationError as e:
-            return [StructureError(**error) for error in e.errors()]
-        return None
 
     @staticmethod
     def from_path(
         path: Path,
         pack_marketplaces: List[MarketplaceVersions] = list(MarketplaceVersions),
+        pack_supported_modules: List[str] = DEFAULT_SUPPORTED_MODULES,
         git_sha: Optional[str] = None,
     ) -> "ContentItemParser":
         """Tries to parse a content item by its path.
@@ -144,11 +123,16 @@ class ContentItemParser(BaseContentParser, metaclass=ParserMetaclass):
         if parser_cls := ContentItemParser.content_type_to_parser.get(content_type):
             try:
                 return ContentItemParser.parse(
-                    parser_cls, path, pack_marketplaces, git_sha
+                    parser_cls, path, pack_marketplaces, pack_supported_modules, git_sha
                 )
             except IncorrectParserException as e:
                 return ContentItemParser.parse(
-                    e.correct_parser, path, pack_marketplaces, git_sha, **e.kwargs
+                    e.correct_parser,
+                    path,
+                    pack_marketplaces,
+                    pack_supported_modules,
+                    git_sha,
+                    **e.kwargs,
                 )
             except NotAContentItemException:
                 logger.debug(f"{path} is not a content item, skipping")
@@ -164,10 +148,13 @@ class ContentItemParser(BaseContentParser, metaclass=ParserMetaclass):
         parser_cls: Type["ContentItemParser"],
         path: Path,
         pack_marketplaces: List[MarketplaceVersions],
+        pack_supported_modules: List[str] = DEFAULT_SUPPORTED_MODULES,
         git_sha: Optional[str] = None,
         **kwargs,
     ) -> "ContentItemParser":
-        parser = parser_cls(path, pack_marketplaces, git_sha=git_sha, **kwargs)
+        parser = parser_cls(
+            path, pack_marketplaces, pack_supported_modules, git_sha=git_sha, **kwargs
+        )
         logger.debug(f"Parsed {parser.node_id}")
         return parser
 
@@ -180,6 +167,14 @@ class ContentItemParser(BaseContentParser, metaclass=ParserMetaclass):
     @abstractmethod
     def display_name(self) -> Optional[str]:
         pass
+
+    @property
+    @abstractmethod
+    def support(self) -> str:
+        pass
+
+    def get_support(self, data: dict) -> str:
+        return data.get("supportlevelheader") or ""
 
     @property
     def version(self) -> int:
@@ -198,6 +193,11 @@ class ContentItemParser(BaseContentParser, metaclass=ParserMetaclass):
     @property
     @abstractmethod
     def marketplaces(self) -> List[MarketplaceVersions]:
+        pass
+
+    @property
+    @abstractmethod
+    def is_silent(self) -> bool:
         pass
 
     def get_marketplaces(self, data: dict) -> List[MarketplaceVersions]:
@@ -413,7 +413,3 @@ class ContentItemParser(BaseContentParser, metaclass=ParserMetaclass):
             target_type=ContentType.COMMAND_OR_SCRIPT,
             mandatorily=is_mandatory,
         )
-
-    @property
-    def strict_object(self) -> Optional[Type[BaseModel]]:
-        return None

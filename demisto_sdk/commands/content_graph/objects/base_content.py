@@ -22,6 +22,7 @@ from pydantic import BaseModel, DirectoryPath, Field
 from pydantic.main import ModelMetaclass
 
 from demisto_sdk.commands.common.constants import (
+    DEFAULT_SUPPORTED_MODULES,
     MARKETPLACE_MIN_VERSION,
     PACKS_FOLDER,
     PACKS_PACK_META_FILE_NAME,
@@ -102,7 +103,7 @@ class BaseNode(ABC, BaseModel, metaclass=BaseContentMetaclass):
     source_repo: str = "content"
     node_id: str
     marketplaces: List[MarketplaceVersions] = list(MarketplaceVersions)
-
+    supportedModules: List[str] = DEFAULT_SUPPORTED_MODULES
     relationships_data: Dict[RelationshipType, Set["RelationshipData"]] = Field(
         defaultdict(set), exclude=True, repr=False
     )
@@ -203,7 +204,7 @@ class BaseContent(BaseNode):
     git_sha: Optional[str]
     old_base_content_object: Optional["BaseContent"] = None
     related_content_dict: dict = Field({}, exclude=True)
-    structure_errors: Optional[List[StructureError]] = Field(None, exclude=True)
+    structure_errors: List[StructureError] = Field(default_factory=list, exclude=True)
 
     def _save(
         self,
@@ -261,10 +262,6 @@ class BaseContent(BaseNode):
         """
         raise NotImplementedError
 
-    @property
-    def support_level(self) -> str:
-        raise NotImplementedError
-
     def dump(
         self,
         path: DirectoryPath,
@@ -290,7 +287,7 @@ class BaseContent(BaseNode):
         raise_on_exception: bool = False,
         metadata_only: bool = False,
     ) -> Optional["BaseContent"]:
-        logger.debug(f"Loading content item from path: {path}")
+        logger.debug(f"Loading content item from {path}")
 
         if (
             path.is_dir()
@@ -302,38 +299,33 @@ class BaseContent(BaseNode):
                     PackParser(path, git_sha=git_sha, metadata_only=metadata_only)
                 )
             except InvalidContentItemException:
-                logger.error(f"Could not parse content from {str(path)}")
+                logger.error(f"Could not parse content from {path}")
                 return None
         try:
             content_item.MARKETPLACE_MIN_VERSION = "0.0.0"
             content_item_parser = ContentItemParser.from_path(path, git_sha=git_sha)
             content_item.MARKETPLACE_MIN_VERSION = MARKETPLACE_MIN_VERSION
 
-        except NotAContentItemException:
+        except (NotAContentItemException, InvalidContentItemException) as e:
             if raise_on_exception:
                 raise
             logger.error(
-                f"Invalid content path provided: {str(path)}. Please provide a valid content item or pack path."
-            )
-            return None
-        except InvalidContentItemException:
-            if raise_on_exception:
-                raise
-            logger.error(
-                f"Invalid content path provided: {str(path)}. Please provide a valid content item or pack path."
+                f"Invalid content path provided: {path}. Please provide a valid content item or pack path. ({type(e).__name__})"
             )
             return None
 
         model = CONTENT_TYPE_TO_MODEL.get(content_item_parser.content_type)
-        logger.debug(f"Loading content item from path: {path} as {model}")
-        if not model:
-            logger.error(f"Could not parse content item from path: {path}")
+        if model:
+            logger.debug(f"Detected model {model} for {path.name}")
+        else:
+            logger.error(f"Could not parse content item from {path.name}")
             return None
+
         try:
             return model.from_orm(content_item_parser)  # type: ignore
-        except Exception as e:
-            logger.error(
-                f"Could not parse content item from path: {path}: {e}. Parser class: {content_item_parser}"
+        except Exception:
+            logger.exception(
+                f"Could not parse content item from path {path} using {content_item_parser}"
             )
             return None
 

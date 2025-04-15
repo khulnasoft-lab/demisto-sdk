@@ -10,6 +10,7 @@ from demisto_sdk.commands.content_graph.parsers.content_item import (
 from demisto_sdk.commands.content_graph.parsers.json_content_item import (
     JSONContentItemParser,
 )
+from demisto_sdk.commands.content_graph.strict_objects.layout import StrictLayout
 
 
 class LayoutParser(JSONContentItemParser, content_type=ContentType.LAYOUT):
@@ -17,9 +18,12 @@ class LayoutParser(JSONContentItemParser, content_type=ContentType.LAYOUT):
         self,
         path: Path,
         pack_marketplaces: List[MarketplaceVersions],
+        pack_supported_modules: List[str],
         git_sha: Optional[str] = None,
     ) -> None:
-        super().__init__(path, pack_marketplaces, git_sha=git_sha)
+        super().__init__(
+            path, pack_marketplaces, pack_supported_modules, git_sha=git_sha
+        )
         if "group" not in self.json_data:
             logger.debug(f"{path}: Not a layout container, skipping.")
             raise NotAContentItemException
@@ -27,7 +31,9 @@ class LayoutParser(JSONContentItemParser, content_type=ContentType.LAYOUT):
         self.kind = self.json_data.get("kind")
         self.tabs = self.json_data.get("tabs")
         self.definition_id = self.json_data.get("definitionId")
-        self.group = self.json_data.get("group")
+        self.group = self.json_data.get("group") or (
+            "incident" if self.definition_id == "ThreatIntelReport" else ""
+        )
 
         self.edit: bool = bool(self.json_data.get("edit"))
         self.indicators_details: bool = bool(self.json_data.get("indicatorsDetails"))
@@ -49,6 +55,7 @@ class LayoutParser(JSONContentItemParser, content_type=ContentType.LAYOUT):
             MarketplaceVersions.MarketplaceV2,
             MarketplaceVersions.XSOAR_SAAS,
             MarketplaceVersions.XSOAR_ON_PREM,
+            MarketplaceVersions.PLATFORM,
         }
 
     def connect_to_dependencies(self) -> None:
@@ -97,3 +104,7 @@ class LayoutParser(JSONContentItemParser, content_type=ContentType.LAYOUT):
 
         get_values(self.json_data)
         return values
+
+    @property
+    def strict_object(self):
+        return StrictLayout

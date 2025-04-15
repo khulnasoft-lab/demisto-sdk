@@ -82,3 +82,33 @@
   entry: validate-xsoar-config
   language: python
   pass_filenames: true
+
+- id: validate-file-permission-changes
+  name: validate-file-permission-changes
+  description: Validate that file permissions haven't been changed.
+  entry: validate-file-permission-changes
+  language: python
+  files: ^Packs/
+
+- id: prevent-mypy-global-ignore
+  name: prevent-mypy-global-ignore
+  description: Prevent Python files from setting global mypy ignore
+  entry: prevent-mypy-global-ignore
+  language: python
+  files: .*Packs/.*/(?:Integrations|Scripts)/.*.py$
+
+- id: generate-command-docs
+  name: Generate Documentation for Changed Commands
+  description: Generates documentation for commands when a `_setup.py` file is modified.
+  entry: generate-command-docs
+  language: python
+  files: ^.*_setup\.py$
+
+- id: validate-validation-config-file
+  name: Validation for validate_config file
+  description: Validate the validation config file
+  entry: validate-validation-config-file
+  language: python
+  pass_filenames: false
+  args:
+  - --config-path=demisto_sdk/commands/validate/sdk_validation_config.toml

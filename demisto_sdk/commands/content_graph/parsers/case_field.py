@@ -8,6 +8,7 @@ from demisto_sdk.commands.content_graph.common import ContentType
 from demisto_sdk.commands.content_graph.parsers.json_content_item import (
     JSONContentItemParser,
 )
+from demisto_sdk.commands.content_graph.strict_objects.case_field import StrictCaseField
 
 
 class CaseFieldParser(JSONContentItemParser, content_type=ContentType.CASE_FIELD):
@@ -15,9 +16,12 @@ class CaseFieldParser(JSONContentItemParser, content_type=ContentType.CASE_FIELD
         self,
         path: Path,
         pack_marketplaces: List[MarketplaceVersions],
+        pack_supported_modules: List[str],
         git_sha: Optional[str] = None,
     ) -> None:
-        super().__init__(path, pack_marketplaces, git_sha=git_sha)
+        super().__init__(
+            path, pack_marketplaces, pack_supported_modules, git_sha=git_sha
+        )
         self.field_type = self.json_data.get("type")
         self.associated_to_all = self.json_data.get("associatedToAll")
         self.content = self.json_data.get("content")
@@ -40,6 +44,8 @@ class CaseFieldParser(JSONContentItemParser, content_type=ContentType.CASE_FIELD
 
     @property
     def supported_marketplaces(self) -> Set[MarketplaceVersions]:
-        return {
-            MarketplaceVersions.MarketplaceV2,
-        }
+        return {MarketplaceVersions.MarketplaceV2, MarketplaceVersions.PLATFORM}
+
+    @property
+    def strict_object(self):
+        return StrictCaseField

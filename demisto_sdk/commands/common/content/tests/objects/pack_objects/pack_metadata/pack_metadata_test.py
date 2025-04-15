@@ -1,10 +1,10 @@
-import logging
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from shutil import rmtree
 
 import pytest
+from more_itertools import one
 from packaging.version import parse
 from pytest import MonkeyPatch
 
@@ -20,7 +20,6 @@ from demisto_sdk.commands.common.content.objects.pack_objects import PackMetaDat
 from demisto_sdk.commands.common.content.objects.pack_objects.pack import Pack
 from demisto_sdk.commands.common.content.objects_factory import path_to_pack_object
 from demisto_sdk.commands.common.docker.docker_image import DockerImage
-from demisto_sdk.commands.common.logger import logger
 from demisto_sdk.commands.common.tools import src_root
 from demisto_sdk.commands.content_graph.common import (
     ContentType,
@@ -33,7 +32,8 @@ from demisto_sdk.commands.content_graph.objects.pack_metadata import PackMetadat
 from demisto_sdk.commands.content_graph.tests.create_content_graph_test import (
     mock_integration,
 )
-from TestSuite.test_tools import ChangeCWD, str_in_call_args_list
+from demisto_sdk.commands.validate.tests.test_tools import create_playbook_object
+from TestSuite.test_tools import ChangeCWD
 
 TEST_DATA = src_root() / "tests" / "test_files"
 TEST_CONTENT_REPO = TEST_DATA / "content_slim"
@@ -150,9 +150,7 @@ def test_support_details_getter(url, support, email, expected_url, expected_emai
         ),
     ],
 )
-def test_author_getter(mocker, support, author, expected_author, expected_log):
-    logger_warning = mocker.patch.object(logging.getLogger("demisto-sdk"), "warning")
-
+def test_author_getter(caplog, mocker, support, author, expected_author, expected_log):
     obj = PackMetaData(PACK_METADATA)
     obj.support = support
     obj.author = author
@@ -160,9 +158,11 @@ def test_author_getter(mocker, support, author, expected_author, expected_log):
     assert obj.author == expected_author
 
     if expected_log:
-        assert str_in_call_args_list(
-            logger_warning.call_args_list,
-            expected_log,
+        record = one(caplog.records)
+        assert record.levelname == "WARNING"
+        assert (
+            record.message
+            == "someone author doest not match Cortex XSOAR default value"
         )
 
 
@@ -244,7 +244,7 @@ def test_load_user_metadata_basic(repo):
             )
 
     pack_1_metadata = artifact_manager.content.packs["Pack1"].metadata
-    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path, logger)
+    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path)
 
     assert pack_1_metadata.id == "Pack1"
     assert pack_1_metadata.name == "Pack Number 1"
@@ -301,7 +301,7 @@ def test_load_user_metadata_advanced(repo):
             )
 
     pack_1_metadata = artifact_manager.content.packs["Pack1"].metadata
-    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path, logger)
+    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path)
 
     assert pack_1_metadata.id == "Pack1"
     assert pack_1_metadata.name == "Pack Number 1"
@@ -311,7 +311,7 @@ def test_load_user_metadata_advanced(repo):
     assert pack_1_metadata.tags == ["tag1", "Use Case"]
 
 
-def test_load_user_metadata_no_metadata_file(repo, mocker, monkeypatch):
+def test_load_user_metadata_no_metadata_file(caplog, repo, mocker, monkeypatch):
     """
     When:
         - Dumping a pack with no pack_metadata file.
@@ -322,9 +322,7 @@ def test_load_user_metadata_no_metadata_file(repo, mocker, monkeypatch):
     Then:
         - Verify that exceptions are written to the logger.
     """
-    logger_error = mocker.patch.object(logging.getLogger("demisto-sdk"), "error")
-    monkeypatch.setenv("COLUMNS", "1000")
-
+    caplog.set_level("ERROR")
     pack_1 = repo.setup_one_pack("Pack1")
     pack_1.pack_metadata.write_json(
         {
@@ -340,15 +338,11 @@ def test_load_user_metadata_no_metadata_file(repo, mocker, monkeypatch):
 
     content_object_pack = Pack(pack_1.path)
     pack_1_metadata = content_object_pack.metadata
-    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path, logger)
-
-    assert str_in_call_args_list(
-        logger_error.call_args_list,
-        "Pack Number 1 pack is missing pack_metadata.json file.",
-    )
+    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path)
+    assert "Pack Number 1 pack is missing pack_metadata.json file." in caplog.text
 
 
-def test_load_user_metadata_invalid_price(repo, mocker, monkeypatch):
+def test_load_user_metadata_invalid_price(caplog, repo, mocker, monkeypatch):
     """
     When:
         - Dumping a pack with invalid price in pack_metadata file.
@@ -360,9 +354,7 @@ def test_load_user_metadata_invalid_price(repo, mocker, monkeypatch):
         - Verify that exceptions are written to the logger.
 
     """
-    logger_error = mocker.patch.object(logging.getLogger("demisto-sdk"), "error")
-    monkeypatch.setenv("COLUMNS", "1000")
-
+    caplog.set_level("ERROR")
     pack_1 = repo.setup_one_pack("Pack1")
     pack_1.pack_metadata.write_json(
         {
@@ -377,15 +369,14 @@ def test_load_user_metadata_invalid_price(repo, mocker, monkeypatch):
 
     content_object_pack = Pack(pack_1.path)
     pack_1_metadata = content_object_pack.metadata
-    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path, logger)
+    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path)
 
-    assert str_in_call_args_list(
-        logger_error.call_args_list,
-        "Pack Number 1 pack price is not valid. The price was set to 0.",
+    assert (
+        "Pack Number 1 pack price is not valid. The price was set to 0." in caplog.text
     )
 
 
-def test_load_user_metadata_bad_pack_metadata_file(repo, mocker, monkeypatch):
+def test_load_user_metadata_bad_pack_metadata_file(caplog, repo, mocker, monkeypatch):
     """
     When:
         - Dumping a pack with invalid pack_metadata file.
@@ -397,19 +388,15 @@ def test_load_user_metadata_bad_pack_metadata_file(repo, mocker, monkeypatch):
         - Verify that exceptions are written to the logger.
 
     """
-    logger_error = mocker.patch.object(logging.getLogger("demisto-sdk"), "error")
-    monkeypatch.setenv("COLUMNS", "1000")
 
     pack_1 = repo.setup_one_pack("Pack1")
     pack_1.pack_metadata.write_as_text("Invalid of course {")
     content_object_pack = Pack(pack_1.path)
 
     pack_1_metadata = content_object_pack.metadata
-    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path, logger)
+    pack_1_metadata.load_user_metadata("Pack1", "Pack Number 1", pack_1.path)
 
-    assert str_in_call_args_list(
-        logger_error.call_args_list, "Failed loading Pack Number 1 user metadata."
-    )
+    assert "Failed loading Pack Number 1 user metadata." in caplog.text
 
 
 @pytest.mark.parametrize("is_external, expected", [(True, ""), (False, "123")])
@@ -818,3 +805,87 @@ def mock_pack_metadata_for_data_source(support, default_data_source, integration
     content_items = PackContentItems()
     content_items.integration.extend(integrations)
     return content_items, my_instance
+
+
+@pytest.mark.parametrize(
+    "content_item, incident_to_alert, expected_description",
+    [
+        (
+            create_playbook_object(
+                ["id", "name", "description"],
+                ["playbook-incidents", "playbook-incidents", "playbook-incidents"],
+            ),
+            True,
+            "playbook-alerts",
+        ),
+        (
+            create_playbook_object(
+                ["id", "name", "description"],
+                ["playbook-incidents", "playbook-incidents", "playbook-incidents"],
+            ),
+            False,
+            "my playbook tester",
+        ),
+        (
+            create_playbook_object(
+                ["id", "name", "description"],
+                ["playbook-incidents", "playbook-incidents", "my playbook tester"],
+            ),
+            True,
+            "my playbook tester",
+        ),
+    ],
+)
+def test_replace_item_if_has_higher_toversion_on_playbook(
+    content_item, incident_to_alert, expected_description
+):
+    """
+    Given:
+        a Pack Metadata, playbook, incidents_to_alerts flag.
+        - Case 1: Playbook with description different from the one in the metadata and incidents_to_alerts=True.
+        - Case 2: Playbook with description different from the one in the metadata and incidents_to_alerts=False.
+        - Case 3: Playbook with description similar to the one in the metadata and incidents_to_alerts=True.
+    When:
+        - Calling the _replace_item_if_has_higher_toversion method.
+    Then:
+        Ensure the id and the name fields in hte metadata we left untouched and the description is changed accordingly.
+        - Case 1: description should change.
+        - Case 2: description shouldn't change.
+        - Case 3: description shouldn't change.
+    """
+    content_item_metadata = {
+        "toversion": "99.99.99",
+        "id": "my playbook tester",
+        "name": "my playbook tester",
+        "description": "my playbook tester",
+    }
+    my_instance = PackMetadata(
+        name="test",
+        display_name="",
+        description="",
+        created="",
+        legacy=False,
+        support="",
+        url="",
+        email="",
+        eulaLink="",
+        price=0,
+        hidden=False,
+        commit="",
+        downloads=0,
+        keywords=[],
+        searchRank=0,
+        excludedDependencies=[],
+        videos=[],
+        modules=[],
+    )  # type: ignore
+    my_instance._replace_item_if_has_higher_toversion(
+        content_item,
+        content_item_metadata,
+        content_item.summary(MarketplaceVersions.MarketplaceV2, incident_to_alert),
+        MarketplaceVersions.MarketplaceV2,
+        incident_to_alert=incident_to_alert,
+    )
+    assert content_item_metadata["id"] == "my playbook tester"
+    assert content_item_metadata["name"] == "my playbook tester"
+    assert content_item_metadata["description"] == expected_description

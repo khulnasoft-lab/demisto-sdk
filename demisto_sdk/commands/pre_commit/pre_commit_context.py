@@ -30,6 +30,8 @@ DEFAULT_PRE_COMMIT_TEMPLATE_PATH = PATH / PRECOMMIT_TEMPLATE_NAME
 PRECOMMIT_FOLDER = CACHE_DIR / "pre-commit"
 PRECOMMIT_CONFIG = PRECOMMIT_FOLDER / "config"
 PRECOMMIT_CONFIG_MAIN_PATH = PRECOMMIT_CONFIG / "pre-commit-config-main.yaml"
+ARTIFACTS_FOLDER = os.getenv("ARTIFACTS_FOLDER")
+HOOK_LOG_PATH = Path(ARTIFACTS_FOLDER) / "pre-commit" if ARTIFACTS_FOLDER else None
 
 # This has to be relative to content path so the docker will be able to write to it
 PRE_COMMIT_FOLDER_SHARED = CONTENT_PATH / ".pre-commit"
@@ -62,6 +64,8 @@ class PreCommitContext:
         shutil.rmtree(PRE_COMMIT_FOLDER_SHARED, ignore_errors=True)
         PRECOMMIT_FOLDER.mkdir(parents=True)
         PRECOMMIT_CONFIG.mkdir()
+        if HOOK_LOG_PATH:
+            HOOK_LOG_PATH.mkdir(parents=True, exist_ok=True)
         self.precommit_template: dict = get_file_or_remote(
             self.pre_commit_template_path
         )
@@ -118,7 +122,7 @@ class PreCommitContext:
         support_level_to_files = defaultdict(set)
         for path, obj in self.files_to_run_with_objects:
             if obj is not None:
-                support_level_to_files[obj.support_level].add(path)
+                support_level_to_files[obj.support].add(path)
         return support_level_to_files
 
     def _get_hooks(self, pre_commit_config: dict) -> dict:
@@ -126,6 +130,8 @@ class PreCommitContext:
         for repo in pre_commit_config.get("repos", []):
             new_hooks = []
             for hook in repo.get("hooks", []):
+                if (not hook.get("log_file")) and HOOK_LOG_PATH:
+                    hook["log_file"] = f"{HOOK_LOG_PATH}/{hook['id']}.log"
                 if not self.run_docker_hooks and hook["id"].endswith("in-docker"):
                     continue
                 if (self.run_hook and self.run_hook in hook["id"]) or (

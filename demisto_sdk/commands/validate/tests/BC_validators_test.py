@@ -3,7 +3,11 @@ from typing import List
 
 import pytest
 
-from demisto_sdk.commands.common.constants import GitStatuses, MarketplaceVersions
+from demisto_sdk.commands.common.constants import (
+    DEFAULT_CONTENT_ITEM_TO_VERSION,
+    GitStatuses,
+    MarketplaceVersions,
+)
 from demisto_sdk.commands.content_graph.objects import Integration
 from demisto_sdk.commands.content_graph.objects.integration import Command, Output
 from demisto_sdk.commands.content_graph.objects.mapper import Mapper
@@ -14,6 +18,7 @@ from demisto_sdk.commands.validate.tests.test_tools import (
     create_incident_type_object,
     create_incoming_mapper_object,
     create_integration_object,
+    create_modeling_rule_object,
     create_old_file_pointers,
     create_pack_object,
     create_script_object,
@@ -385,21 +390,21 @@ def test_WasMarketplaceModifiedValidator__modified_item_has_only_one_marketplace
         - Case 2: Should pass the validation since the user did not remove any marketplace.
         - Case 3: Should pass the validation since the user did not remove any marketplace.
     """
-    modified_content_items = [
-        create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
-        create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
-    ]
-    old_content_items = [create_integration_object(), create_script_object()]
-
-    modified_content_items[0].marketplaces = modified_content_items[1].marketplaces = (
-        XSIAM_MARKETPLACE
-    )
-    old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
-        old_marketplaces
-    )
-    create_old_file_pointers(modified_content_items, old_content_items)
-
     with ChangeCWD(REPO.path):
+        modified_content_items = [
+            create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
+            create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
+        ]
+        old_content_items = [create_integration_object(), create_script_object()]
+
+        modified_content_items[0].marketplaces = modified_content_items[
+            1
+        ].marketplaces = XSIAM_MARKETPLACE
+        old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
+            old_marketplaces
+        )
+        create_old_file_pointers(modified_content_items, old_content_items)
+
         assert (
             WasMarketplaceModifiedValidator().obtain_invalid_content_items(
                 modified_content_items
@@ -433,21 +438,21 @@ def test_WasMarketplaceModifiedValidator__modified_item_has_only_one_marketplace
         - Case 1: Should fail the validation since the user removed marketplaces.
         - Case 2: Should fail the validation since the user replaced one marketplace with a different one.
     """
-    modified_content_items = [
-        create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
-        create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
-    ]
-    old_content_items = [create_integration_object(), create_script_object()]
-
-    modified_content_items[0].marketplaces = modified_content_items[1].marketplaces = (
-        XSIAM_MARKETPLACE
-    )
-    old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
-        old_marketplaces
-    )
-    create_old_file_pointers(modified_content_items, old_content_items)
-
     with ChangeCWD(REPO.path):
+        modified_content_items = [
+            create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
+            create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
+        ]
+        old_content_items = [create_integration_object(), create_script_object()]
+
+        modified_content_items[0].marketplaces = modified_content_items[
+            1
+        ].marketplaces = XSIAM_MARKETPLACE
+        old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
+            old_marketplaces
+        )
+        create_old_file_pointers(modified_content_items, old_content_items)
+
         results = WasMarketplaceModifiedValidator().obtain_invalid_content_items(
             modified_content_items
         )
@@ -483,21 +488,21 @@ def test_WasMarketplaceModifiedValidator__old_item_has_only_one_marketplace__pas
         - Case 1: Should pass the validation since the user added marketplaces or removed all marketplaces which is equal to adding all marketplaces.
         - Case 2: Should pass the validation since the user added marketplaces or removed all marketplaces which is equal to adding all marketplaces.
     """
-    modified_content_items = [
-        create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
-        create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
-    ]
-    old_content_items = [create_integration_object(), create_script_object()]
-
-    modified_content_items[0].marketplaces = modified_content_items[1].marketplaces = (
-        modified_marketplaces
-    )
-    old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
-        XSIAM_MARKETPLACE
-    )
-    create_old_file_pointers(modified_content_items, old_content_items)
-
     with ChangeCWD(REPO.path):
+        modified_content_items = [
+            create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
+            create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
+        ]
+        old_content_items = [create_integration_object(), create_script_object()]
+
+        modified_content_items[0].marketplaces = modified_content_items[
+            1
+        ].marketplaces = modified_marketplaces
+        old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
+            XSIAM_MARKETPLACE
+        )
+        create_old_file_pointers(modified_content_items, old_content_items)
+
         assert (
             WasMarketplaceModifiedValidator().obtain_invalid_content_items(
                 modified_content_items
@@ -521,24 +526,24 @@ def test_WasMarketplaceModifiedValidator__old_item_has_only_one_marketplace__fai
         - Should fail the validation since the user replaced one marketplace with a different one.
 
     """
-    modified_marketplaces = XSOAR_MARKETPLACE
-    in_pack_marketplaces = ALL_MARKETPLACES_FOR_IN_PACK
-
-    modified_content_items = [
-        create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
-        create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
-    ]
-    old_content_items = [create_integration_object(), create_script_object()]
-
-    modified_content_items[0].marketplaces = modified_content_items[1].marketplaces = (
-        modified_marketplaces
-    )
-    old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
-        XSIAM_MARKETPLACE
-    )
-    create_old_file_pointers(modified_content_items, old_content_items)
-
     with ChangeCWD(REPO.path):
+        modified_marketplaces = XSOAR_MARKETPLACE
+        in_pack_marketplaces = ALL_MARKETPLACES_FOR_IN_PACK
+
+        modified_content_items = [
+            create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
+            create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
+        ]
+        old_content_items = [create_integration_object(), create_script_object()]
+
+        modified_content_items[0].marketplaces = modified_content_items[
+            1
+        ].marketplaces = modified_marketplaces
+        old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
+            XSIAM_MARKETPLACE
+        )
+        create_old_file_pointers(modified_content_items, old_content_items)
+
         results = WasMarketplaceModifiedValidator().obtain_invalid_content_items(
             modified_content_items
         )
@@ -575,15 +580,15 @@ def test_WasMarketplaceModifiedValidator__old_and_modified_items_have_all_market
         - Case 1: Should pass the validation since the user added marketplaces or removed all marketplaces which is equal to adding all marketplaces.
         - Case 2: Should pass the validation since the user didn't change anything or removed all marketplaces which is equal to adding all marketplaces.
     """
-
-    modified_content_items = [
-        create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
-        create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
-    ]
-    old_content_items = [create_integration_object(), create_script_object()]
-
-    create_old_file_pointers(modified_content_items, old_content_items)
     with ChangeCWD(REPO.path):
+        modified_content_items = [
+            create_integration_object(pack_info={"marketplaces": in_pack_marketplaces}),
+            create_script_object(pack_info={"marketplaces": in_pack_marketplaces}),
+        ]
+        old_content_items = [create_integration_object(), create_script_object()]
+
+        create_old_file_pointers(modified_content_items, old_content_items)
+
         assert (
             WasMarketplaceModifiedValidator().obtain_invalid_content_items(
                 modified_content_items
@@ -684,21 +689,21 @@ def test_WasMarketplaceModifiedValidator__renamed__fails():
         - Should fail the validation since moving to a different pack with less marketplaces is not allowed.
 
     """
-    renamed_content_items = [
-        create_integration_object(pack_info={"marketplaces": XSOAR_MARKETPLACE}),
-        create_script_object(pack_info={"marketplaces": XSOAR_MARKETPLACE}),
-    ]
-    renamed_content_items[0].git_status = renamed_content_items[1].git_status = (
-        GitStatuses.RENAMED
-    )
-    old_content_items = [create_integration_object(), create_script_object()]
-
-    old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
-        ALL_MARKETPLACES_FOR_IN_PACK
-    )
-    create_old_file_pointers(renamed_content_items, old_content_items)
-
     with ChangeCWD(REPO.path):
+        renamed_content_items = [
+            create_integration_object(pack_info={"marketplaces": XSOAR_MARKETPLACE}),
+            create_script_object(pack_info={"marketplaces": XSOAR_MARKETPLACE}),
+        ]
+        renamed_content_items[0].git_status = renamed_content_items[1].git_status = (
+            GitStatuses.RENAMED
+        )
+        old_content_items = [create_integration_object(), create_script_object()]
+
+        old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
+            ALL_MARKETPLACES_FOR_IN_PACK
+        )
+        create_old_file_pointers(renamed_content_items, old_content_items)
+
         results = WasMarketplaceModifiedValidator().obtain_invalid_content_items(
             renamed_content_items
         )
@@ -724,23 +729,25 @@ def test_WasMarketplaceModifiedValidator__renamed__passes():
         - Should pass the validation since the new host has all marketplaces in pack level.
 
     """
-    renamed_content_items = [
-        create_integration_object(
-            pack_info={"marketplaces": ALL_MARKETPLACES_FOR_IN_PACK}
-        ),
-        create_script_object(pack_info={"marketplaces": ALL_MARKETPLACES_FOR_IN_PACK}),
-    ]
-    renamed_content_items[0].git_status = renamed_content_items[1].git_status = (
-        GitStatuses.RENAMED
-    )
-    old_content_items = [create_integration_object(), create_script_object()]
-
-    old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
-        XSOAR_MARKETPLACE
-    )
-    create_old_file_pointers(renamed_content_items, old_content_items)
-
     with ChangeCWD(REPO.path):
+        renamed_content_items = [
+            create_integration_object(
+                pack_info={"marketplaces": ALL_MARKETPLACES_FOR_IN_PACK}
+            ),
+            create_script_object(
+                pack_info={"marketplaces": ALL_MARKETPLACES_FOR_IN_PACK}
+            ),
+        ]
+        renamed_content_items[0].git_status = renamed_content_items[1].git_status = (
+            GitStatuses.RENAMED
+        )
+        old_content_items = [create_integration_object(), create_script_object()]
+
+        old_content_items[0].marketplaces = old_content_items[1].marketplaces = (
+            XSOAR_MARKETPLACE
+        )
+        create_old_file_pointers(renamed_content_items, old_content_items)
+
         assert (
             WasMarketplaceModifiedValidator().obtain_invalid_content_items(
                 renamed_content_items
@@ -1024,54 +1031,112 @@ def test_IsContextPathChangedValidator_remove_command():
 
 
 @pytest.mark.parametrize(
-    "content_items, old_content_items",
+    "content_items, old_content_items, new_items, errors",
     [
         pytest.param(
             [
                 create_integration_object(paths=["toversion"], values=["6.0.0"]),
-                create_integration_object(paths=["toversion"], values=["5.0.0"]),
             ],
             [
-                create_integration_object(paths=["toversion"], values=["5.0.0"]),
-                create_integration_object(paths=["toversion"], values=["5.0.0"]),
+                create_integration_object(
+                    paths=["toversion"], values=[DEFAULT_CONTENT_ITEM_TO_VERSION]
+                ),
             ],
-            id="Case 1: integration - toversion changed",
+            [
+                create_integration_object(
+                    paths=["fromversion", "toversion"],
+                    values=["6.10.0", DEFAULT_CONTENT_ITEM_TO_VERSION],
+                )
+            ],
+            1,
+            id="Case 1: integration - toversion changed to 6.0.0 and the new fromversion is 6.10.0 which are more than one release apart",
         ),
         pytest.param(
             [
-                create_script_object(paths=["toversion"], values=["6.0.0"]),
-                create_script_object(paths=["toversion"], values=["5.0.0"]),
+                create_modeling_rule_object(paths=["toversion"], values=["6.0.0"]),
             ],
             [
-                create_script_object(paths=["toversion"], values=["5.0.0"]),
-                create_script_object(paths=["toversion"], values=["5.0.0"]),
+                create_modeling_rule_object(
+                    paths=["toversion"], values=[DEFAULT_CONTENT_ITEM_TO_VERSION]
+                ),
             ],
-            id="Case 2: script - toversion changed",
+            [
+                create_modeling_rule_object(
+                    paths=["fromversion", "toversion"],
+                    values=["6.0.0", DEFAULT_CONTENT_ITEM_TO_VERSION],
+                )
+            ],
+            1,
+            id="Case 2: Modeling Rule - toversion changed to 6.0.0 and the new fromversion is 6.0.0, two items with the same id ,cannot exist in the same version",
+        ),
+        pytest.param(
+            [
+                create_modeling_rule_object(paths=["toversion"], values=["6.9.0"]),
+            ],
+            [
+                create_modeling_rule_object(
+                    paths=["toversion"], values=[DEFAULT_CONTENT_ITEM_TO_VERSION]
+                ),
+            ],
+            {},
+            1,
+            id="Case 3: Modeling Rule - toversion changed to 6.9.0 and no new item to replace it was found",
+        ),
+        pytest.param(
+            [
+                create_modeling_rule_object(paths=["toversion"], values=["8.9.0"]),
+            ],
+            [
+                create_modeling_rule_object(
+                    paths=["toversion"], values=[DEFAULT_CONTENT_ITEM_TO_VERSION]
+                ),
+            ],
+            [
+                create_modeling_rule_object(
+                    paths=["fromversion", "toversion"],
+                    values=["8.10.0", DEFAULT_CONTENT_ITEM_TO_VERSION],
+                )
+            ],
+            0,
+            id="Case 4: Modeling Rule - toversion changed to 6.9.0 and the new fromversion is 6.10.0 which is a valid case",
         ),
     ],
 )
 def test_IsValidToversionOnModifiedValidator_obtain_invalid_content_items(
-    content_items, old_content_items
+    mocker, content_items, old_content_items, new_items, errors
 ):
     """
     Given:
-        - Case 1: two content item of type 'Integration', one with modified `toversion`.
-        - Case 2: two content item of type 'Script', one with modified `toversion`.
+        - Case 1: two content item of type 'Integration', `toversion` changed to 6.0.0 and the new `fromversion` is 6.10.0.
+        - Case 2: two content item of type 'ModelingRule', `toversion` changed to 6.0.0 and the new `fromversion` is 6.0.0.
+        - Case 3: two content items of type 'ModelingRule', toversion changed to 6.9.0 and no new item to replace it was found
+        - Case 4: two content items of type 'ModelingRule', toversion changed to 6.9.0 and the new fromversion is 6.10.0 which is a valid case
     When:
         - Calling the `IsValidToversionOnModifiedValidator` validator.
     Then:
-        - The obtain_invalid_content_items function will catch the change in `toversion` and will fail the validation only on the relevant content_item.
+        - Case 1: The obtain_invalid_content_items function will catch the change in `toversion` and will fail the validation since they are more than one release apart.
+        - Case 2: The obtain_invalid_content_items function will catch the change in `toversion` and will fail the validation since two items with the same id ,cannot exist in the same version.
+        - Case 3: The obtain_invalid_content_items function will catch the change in `toversion` and will fail the validation since no new item to replace it was found.
+        - Case 4: Valid case.
     """
     create_old_file_pointers(content_items, old_content_items)
+    for item in content_items:
+        item.git_status = GitStatuses.MODIFIED
+    for item in new_items:
+        item.git_status = GitStatuses.ADDED
+    content_items.extend(new_items)
+
     result = IsValidToversionOnModifiedValidator().obtain_invalid_content_items(
         content_items
     )
 
-    assert (
-        len(result) == 1
-        and result[0].message
-        == "Changing the maximal supported version field `toversion` is not allowed. Please undo, or request a force merge."
-    )
+    assert len(result) == errors
+    if result:
+        for res in result:
+            assert (
+                res.message
+                == f"Changing the maximal supported version field `toversion` is not allowed. unless you're adding new content_item with the same id {res.content_object.object_id} and their from/to version fulfills the following:\nThe old item `toversion` field should be less than the new item `fromversion` field\nThe old and the new item should be continuous, aka the old one `toversion` is one version less than the new one `fromversion`"
+            )
 
 
 def test_args_name_change_validator__fails():

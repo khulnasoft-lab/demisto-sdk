@@ -2,6 +2,9 @@ from typing import Any, List, Optional
 
 from pydantic import Field
 
+from demisto_sdk.commands.common.constants import (
+    MarketplaceVersions,
+)
 from demisto_sdk.commands.content_graph.strict_objects.common import (
     DESCRIPTION_DYNAMIC_MODEL,
     NAME_DYNAMIC_MODEL,
@@ -35,6 +38,8 @@ class _StrictList(BaseStrictModel):
     truncated: Optional[bool] = None
     type_: str = Field(alias="type")
     version: int
+    marketplaces: Optional[List[MarketplaceVersions]] = None
+    supportedModules: Optional[List[str]] = Field(None, alias="supportedModules")
 
 
 StrictList = create_model(

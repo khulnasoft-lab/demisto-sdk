@@ -1,4 +1,5 @@
 import pytest
+from pytest_mock import MockerFixture
 
 from demisto_sdk.commands.common import tools
 from demisto_sdk.commands.common.constants import (
@@ -14,16 +15,21 @@ from demisto_sdk.commands.common.constants import (
     PACK_METADATA_SUPPORT,
     PACK_METADATA_TAGS,
     PACK_METADATA_USE_CASES,
+    GitStatuses,
     MarketplaceVersions,
 )
+from demisto_sdk.commands.content_graph.objects.base_content import BaseNode
 from demisto_sdk.commands.content_graph.parsers.related_files import RelatedFile
 from demisto_sdk.commands.validate.tests.test_tools import (
+    REPO,
     create_integration_object,
+    create_modeling_rule_object,
     create_old_file_pointers,
     create_pack_object,
     create_playbook_object,
     create_script_object,
 )
+from demisto_sdk.commands.validate.validators.base_validator import BaseValidator
 from demisto_sdk.commands.validate.validators.PA_validators.PA100_valid_tags_prefixes import (
     ValidTagsPrefixesValidator,
 )
@@ -57,6 +63,9 @@ from demisto_sdk.commands.validate.validators.PA_validators.PA111_empty_metadata
 from demisto_sdk.commands.validate.validators.PA_validators.PA113_is_url_or_email_exists import (
     IsURLOrEmailExistsValidator,
 )
+from demisto_sdk.commands.validate.validators.PA_validators.PA114_pack_metadata_version_should_be_raised import (
+    PackMetadataVersionShouldBeRaisedValidator,
+)
 from demisto_sdk.commands.validate.validators.PA_validators.PA115_is_created_field_in_iso_format import (
     IsCreatedFieldInISOFormatValidator,
 )
@@ -74,6 +83,12 @@ from demisto_sdk.commands.validate.validators.PA_validators.PA120_is_valid_tags 
 )
 from demisto_sdk.commands.validate.validators.PA_validators.PA121_is_price_changed import (
     IsPriceChangedValidator,
+)
+from demisto_sdk.commands.validate.validators.PA_validators.PA124_is_core_pack_depend_on_non_core_packs_valid_all_files import (
+    IsCorePackDependOnNonCorePacksValidatorAllFiles,
+)
+from demisto_sdk.commands.validate.validators.PA_validators.PA124_is_core_pack_depend_on_non_core_packs_valid_list_files import (
+    IsCorePackDependOnNonCorePacksValidatorListFiles,
 )
 from demisto_sdk.commands.validate.validators.PA_validators.PA125_is_valid_pack_name import (
     IsValidPackNameValidator,
@@ -93,6 +108,8 @@ from demisto_sdk.commands.validate.validators.PA_validators.PA131_is_default_dat
 from demisto_sdk.commands.validate.validators.PA_validators.PA132_is_valid_default_datasource import (
     IsValidDefaultDataSourceNameValidator,
 )
+from TestSuite.repo import Repo
+from TestSuite.test_tools import ChangeCWD
 
 
 @pytest.mark.parametrize(
@@ -528,6 +545,9 @@ def test_IsVersionMatchRnValidator_obtain_invalid_content_items(
                 create_pack_object(["categories"], [["Utilities"]]),
                 create_pack_object(["categories"], [["Random Category..."]]),
                 create_pack_object(["categories"], [["Network Security", "Utilities"]]),
+                create_pack_object(
+                    ["categories"], [["Utilities", "Random Category..."]]
+                ),
             ],
             2,
         ),
@@ -545,13 +565,14 @@ def test_IsValidCategoriesValidator_obtain_invalid_content_items(
             - One pack_metadata with a valid category.
             - One pack_metadata with an invalid category.
             - One pack_metadata with 2 valid categories.
+            - One pack_metadata with 1 valid and 1 invalid categories.
     When
     - Calling the IsValidCategoriesValidator obtain_invalid_content_items function.
     Then
         - Make sure the right amount of pack metadatas failed, and that the right error message is returned.
         - Case 1: Shouldn't fail.
         - Case 2: Should fail.
-        - Case 3: Should fail only the pack_metadata with 2 and 0 categories.
+        - Case 3: Should fail only the pack_metadata with 2 where 1 is a valid and the other isn't and 0 categories.
     """
 
     mocker.patch(
@@ -564,7 +585,7 @@ def test_IsValidCategoriesValidator_obtain_invalid_content_items(
         [
             (
                 result.message
-                == "The pack metadata categories field doesn't match the standard,\nplease make sure the field contain only one category from the following options: Network Security, Utilities."
+                == "The pack metadata categories field doesn't match the standard,\nplease make sure the field contain at least one category from the following options: Network Security, Utilities."
             )
             for result in results
         ]
@@ -1521,18 +1542,20 @@ def test_IsValidUseCasesValidator_fix():
 
 
 @pytest.mark.parametrize(
-    "pack, is_deprecated_pack, integrations, playbooks, scripts, expected_number_of_failures, expected_msgs",
+    "pack, is_deprecated_pack, integrations, playbooks, scripts, modeling_rules, expected_number_of_failures, "
+    "expected_msgs",
     [
-        (create_pack_object(), False, [], [], [], 0, []),
+        (create_pack_object(), False, [], [], [], [], 0, []),
         (
             create_pack_object(),
             False,
             [create_integration_object(["deprecated"], [True])],
             [],
             [],
+            [],
             1,
             [
-                "The Pack HelloWorld should be deprecated, as all its integrations, playbooks and scripts are deprecated.\nThe name of the pack in the pack_metadata.json should end with (Deprecated).\nThe description of the pack in the pack_metadata.json should be one of the following formats:\n1. 'Deprecated. Use <PACK_NAME> instead.'\n2. 'Deprecated. <REASON> No available replacement.'"
+                "The Pack HelloWorld should be deprecated, as all its content items are deprecated.\nThe name of the pack in the pack_metadata.json should end with (Deprecated).\nThe description of the pack in the pack_metadata.json should be one of the following formats:\n1. 'Deprecated. Use PACK_NAME instead.'\n2. 'Deprecated. REASON No available replacement.'"
             ],
         ),
         (
@@ -1541,6 +1564,7 @@ def test_IsValidUseCasesValidator_fix():
             [],
             [create_playbook_object(["deprecated"], [True])],
             [create_script_object()],
+            [],
             0,
             [],
         ),
@@ -1550,6 +1574,17 @@ def test_IsValidUseCasesValidator_fix():
             [create_integration_object(["deprecated"], [True])],
             [],
             [],
+            [],
+            0,
+            [],
+        ),
+        (
+            create_pack_object(),
+            False,
+            [create_integration_object(["deprecated"], [True])],
+            [],
+            [],
+            [create_modeling_rule_object()],
             0,
             [],
         ),
@@ -1561,6 +1596,7 @@ def test_ShouldPackBeDeprecatedValidator_obtain_invalid_content_items(
     integrations,
     playbooks,
     scripts,
+    modeling_rules,
     expected_number_of_failures,
     expected_msgs,
 ):
@@ -1571,6 +1607,7 @@ def test_ShouldPackBeDeprecatedValidator_obtain_invalid_content_items(
         - Case 2: A non deprecated pack with a deprecated integration.
         - Case 3: A non deprecated pack with a deprecated integration and a non deprecated script
         - Case 4: A deprecated pack with a deprecated integration.
+        - Case 5: A non deprecated pack with a deprecated integration and a non deprecated modeling_rule
     When
     - Calling the ShouldPackBeDeprecatedValidator obtain_invalid_content_items function.
     Then
@@ -1579,11 +1616,13 @@ def test_ShouldPackBeDeprecatedValidator_obtain_invalid_content_items(
         - Case 2: Should fail.
         - Case 3: Shouldn't fail.
         - Case 4: Shouldn't fail.
+        - Case 5: Shouldn't fail.
     """
     pack.deprecated = is_deprecated_pack
     pack.content_items.integration.extend(integrations)
     pack.content_items.playbook.extend(playbooks)
     pack.content_items.script.extend(scripts)
+    pack.content_items.modeling_rule.extend(modeling_rules)
     content_items = [pack]
     results = ShouldPackBeDeprecatedValidator().obtain_invalid_content_items(
         content_items
@@ -1641,3 +1680,233 @@ def test_PackFilesValidator_fix(file_attribute: str):
 
     assert meta_file.file_path.exists()
     assert meta_file.exist  # changed in the fix
+
+
+@pytest.mark.parametrize(
+    "old_version, current_version, expected_invalid",
+    [("1.0.0", "1.0.1", 0), ("1.0.0", "1.0.0", 1), ("1.1.0", "1.0.1", 1)],
+)
+def test_PackMetadataVersionShouldBeRaisedValidator(
+    mocker, old_version, current_version, expected_invalid
+):
+    """
+    Given: A previous pack version and a current pack version.
+    When: Running PackMetadataVersionShouldBeRaisedValidator validator.
+    Then: Assure the validation succeeds if the current version <= previous version.
+    Cases:
+        1) current version > previous version: 0 validation errors.
+        2) current version = previous version: 1 validation errors.
+        3) current version < previous version: 1 validation errors.
+    """
+    error_message = (
+        "The pack version (currently: {old_version}) needs to be raised - "
+        "make sure you are merged from master and "
+        "update release notes by running:\n"
+        "`demisto-sdk update-release-notes -g` - for automatically generation of release notes and version\n"
+        "`demisto-sdk update-release-notes -i Packs/{pack} -u "
+        "(major|minor|revision|documentation)` for a specific pack and version."
+    )
+    with ChangeCWD(REPO.path):
+        integration = create_integration_object(
+            pack_info={"currentVersion": current_version}
+        )
+        pack = integration.in_pack
+        integration.git_status = GitStatuses.MODIFIED
+
+        old_pack = pack.copy(deep=True)
+        old_pack.current_version = old_version
+
+        pack.old_base_content_object = old_pack
+        mocker.patch.object(
+            BaseNode, "to_dict", return_value={"current_version": old_version}
+        )
+        version_bump_validator = PackMetadataVersionShouldBeRaisedValidator()
+        results = version_bump_validator.obtain_invalid_content_items(
+            [pack, integration]
+        )
+        assert len(results) == expected_invalid
+        for result in results:
+            assert (
+                error_message.format(old_version=old_version, pack=pack.name)
+                in result.message
+            )
+
+
+def test_PackMetadataVersionShouldBeRaisedValidator_new_pack():
+    """
+    Given: A new pack with a script.
+    When: Running PackMetadataVersionShouldBeRaisedValidator validator.
+    Then: Ensure a validation error is not raised.
+    """
+    pack = create_pack_object(
+        paths=["currentVersion"],
+        values=["1.0.0"],
+    )
+    pack.git_status = GitStatuses.ADDED
+    script = create_script_object()
+    script.pack = pack
+
+    validator = PackMetadataVersionShouldBeRaisedValidator()
+    results = validator.obtain_invalid_content_items([pack, script])
+    assert len(results) == 0
+
+
+def test_PackMetadataVersionShouldBeRaisedValidator_metadata_change(mocker):
+    """
+    Given: A previous pack version = current pack version with a price change within the pack metadata.
+    When: Running PackMetadataVersionShouldBeRaisedValidator validator.
+    Then: Assure the validation fails.
+    """
+    error_message = (
+        "The pack version (currently: {old_version}) needs to be raised - "
+        "make sure you are merged from master and "
+        "update release notes by running:\n"
+        "`demisto-sdk update-release-notes -g` - for automatically generation of release notes and version\n"
+        "`demisto-sdk update-release-notes -i Packs/{pack} -u "
+        "(major|minor|revision|documentation)` for a specific pack and version."
+    )
+    old_version = "1.0.0"
+    current_version = "1.0.0"
+    with ChangeCWD(REPO.path):
+        pack = create_pack_object(["currentVersion", "price"], [current_version, 5])
+        old_pack = pack.copy(deep=True)
+        old_pack.current_version = old_version
+
+        pack.old_base_content_object = old_pack
+        mocker.patch.object(
+            BaseNode,
+            "to_dict",
+            side_effect=[
+                {"current_version": old_version, "price": 3},
+                {"current_version": old_version, "price": 5},
+            ],
+        )
+        version_bump_validator = PackMetadataVersionShouldBeRaisedValidator()
+        results = version_bump_validator.obtain_invalid_content_items([pack])
+        assert len(results) == 1
+        for result in results:
+            assert (
+                error_message.format(old_version=old_version, pack=pack.name)
+                in result.message
+            )
+
+
+@pytest.fixture
+def repo_for_test_pa_124(graph_repo: Repo, mocker: MockerFixture):
+    """
+    Creates a test repository with three packs for testing PA124 validator.
+
+    This fixture sets up a graph repository with the following structure:
+    - CorePack: A core pack containing a playbook that uses a command from Pack2.
+                Has a mandatory dependency on Pack2.
+    - Pack2: Contains an integration with two commands.
+             Serves as a mandatory dependency for CorePack.
+    - Pack3: An empty pack for additional testing scenarios.
+
+    The fixture also mocks the core pack identification to ensure CorePack is recognized as a core pack.
+    """
+    mocker.patch(
+        "demisto_sdk.commands.validate.validators.PA_validators.PA124_is_core_pack_depend_on_non_core_packs_valid.get_marketplace_to_core_packs",
+        return_value={MarketplaceVersions.XSOAR: {"CorePack"}},
+    )
+    playbook_using_pack2_command = {
+        "id": "UsingPack2Command",
+        "name": "UsingPack2Command",
+        "tasks": {
+            "0": {
+                "id": "0",
+                "taskid": "1",
+                "task": {
+                    "id": "1",
+                    "script": "MyIntegration1|||test-command-1",
+                    "brand": "MyIntegration1",
+                    "iscommand": "true",
+                },
+            }
+        },
+    }
+    # Core Pack 1: playbook uses command from pack 2
+    pack_1 = graph_repo.create_pack("CorePack")
+
+    pack_1.create_playbook("UsingCorePackCommand", yml=playbook_using_pack2_command)
+
+    # Define Pack2 as a mandatory dependency for CorePack
+    pack_1.pack_metadata.update({"dependencies": {"Pack2": {"mandatory": True}}})
+
+    # Pack 2: mandatory dependency for CorePack
+    pack_2 = graph_repo.create_pack("Pack2")
+    integration = pack_2.create_integration("MyIntegration1")
+    integration.set_commands(["test-command-1", "test-command-2"])
+
+    # Pack3
+    graph_repo.create_pack("Pack3")
+    return graph_repo
+
+
+def test_IsCorePackDependOnNonCorePacksValidatorAllFiles_invalid(
+    repo_for_test_pa_124: Repo,
+):
+    """
+    Test the IsCorePackDependOnNonCorePacksValidatorAllFiles validator for invalid dependencies.
+    Given:
+        - A test repository (repo_for_test_pa_124) with:
+            - A core pack "CorePack" that has a mandatory dependency on "Pack2"
+            - "Pack2" which is not a core pack
+            - "Pack3" as an additional pack
+
+    When:
+        - Running the IsCorePackDependOnNonCorePacksValidatorAllFiles validator
+
+    Then:
+        - The validator should return a result indicating that CorePack
+          depends on the non-core pack Pack2
+        - The error message should clearly state the violation and suggest reverting the change
+    """
+    graph_interface = repo_for_test_pa_124.create_graph()
+    BaseValidator.graph_interface = graph_interface
+    results = (
+        IsCorePackDependOnNonCorePacksValidatorAllFiles().obtain_invalid_content_items(
+            []
+        )
+    )
+    assert (
+        results[0].message
+        == "The core pack CorePack cannot depend on non-core pack(s): Pack2."
+    )
+
+
+def test_IsCorePackDependOnNonCorePacksValidatorListFiles(repo_for_test_pa_124: Repo):
+    """
+    Test the IsCorePackDependOnNonCorePacksValidatorListFiles validator for specific packs.
+    Given:
+        - A test repository (repo_for_test_pa_124) with:
+            - A core pack "CorePack" that has a mandatory dependency on "Pack2"
+            - "Pack2" which is not a core pack
+            - "Pack3" as an additional pack without dependencies
+
+    When:
+        - Running the IsCorePackDependOnNonCorePacksValidatorListFiles validator on CorePack
+        - Running the same validator on Pack3
+
+    Then:
+        - For CorePack: The validator should return a result indicating the invalid dependency
+        - For Pack3: The validator should not return any results (no invalid dependencies)
+    """
+    graph_interface = repo_for_test_pa_124.create_graph()
+    BaseValidator.graph_interface = graph_interface
+    results = (
+        IsCorePackDependOnNonCorePacksValidatorListFiles().obtain_invalid_content_items(
+            [repo_for_test_pa_124.packs[0]]
+        )
+    )
+    assert (
+        results[0].message
+        == "The core pack CorePack cannot depend on non-core pack(s): Pack2."
+    )
+
+    results = (
+        IsCorePackDependOnNonCorePacksValidatorListFiles().obtain_invalid_content_items(
+            [repo_for_test_pa_124.packs[2]]
+        )
+    )
+    assert not results

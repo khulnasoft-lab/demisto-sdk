@@ -34,6 +34,8 @@ from demisto_sdk.commands.common.tools import (
 from demisto_sdk.commands.content_graph.common import (
     ContentType,
     RelationshipType,
+    append_supported_modules,
+    replace_marketplace_references,
 )
 from demisto_sdk.commands.content_graph.objects.base_content import (
     BaseContent,
@@ -41,6 +43,8 @@ from demisto_sdk.commands.content_graph.objects.base_content import (
 from demisto_sdk.commands.prepare_content.preparers.marketplace_suffix_preparer import (
     MarketplaceSuffixPreparer,
 )
+
+CONTENT_ITEMS_TO_SKIP_ID_MODIFICATION = [ContentType.PLAYBOOK]
 
 
 class ContentItem(BaseContent):
@@ -54,6 +58,8 @@ class ContentItem(BaseContent):
     description: Optional[str] = ""
     is_test: bool = False
     pack: Any = Field(None, exclude=True, repr=False)
+    support: str = ""
+    is_silent: bool = False
 
     @validator("path", always=True)
     def validate_path(cls, v: Path, values) -> Path:
@@ -75,13 +81,59 @@ class ContentItem(BaseContent):
     def pack_id(self) -> str:
         return self.in_pack.pack_id if self.in_pack else ""
 
+    @validator("pack", always=True)
+    def validate_pack(cls, v: Any, values) -> Optional["Pack"]:
+        # Validate that we have the pack containing the content item.
+        # The pack is either provided directly or needs to be located.
+
+        if v and not isinstance(v, fields.FieldInfo):
+            return v
+        return cls.get_pack(values.get("relationships_data"), values.get("path"))
+
+    @validator("support", always=True)
+    def validate_support(cls, v: str, values) -> str:
+        # Ensure the 'support' field is present.
+        # If not directly provided, the support level from the associated pack will be used.
+        if v:
+            return v
+        pack = values.get("pack")
+        if pack and pack.support:
+            return pack.support
+
+        return ""
+
     @property
-    def support_level(self) -> str:
-        return (
-            self.in_pack.support_level
-            if self.in_pack and self.in_pack.support_level
-            else ""
-        )
+    def in_pack(self) -> Optional["Pack"]:
+        """
+        This returns the Pack which the content item is in.
+
+        Returns:
+            Pack: Pack model.
+        """
+        if not self.pack:
+            self.pack = ContentItem.get_pack(self.relationships_data, self.path)
+        return self.pack  # type: ignore[return-value]
+
+    @staticmethod
+    def get_pack(
+        relationships_data: dict,
+        path: Path,
+    ) -> Optional["Pack"]:
+        """
+        Returns the Pack which the content item is in.
+
+        Returns:
+            Pack: Pack model.
+        """
+        pack = None
+        if in_pack := relationships_data[RelationshipType.IN_PACK]:
+            pack = next(iter(in_pack)).content_item_to  # type: ignore[return-value]
+        if not pack:
+            if pack_name := get_pack_name(path):
+                pack = BaseContent.from_path(
+                    CONTENT_PATH / PACKS_FOLDER / pack_name, metadata_only=True
+                )  # type: ignore[assignment]
+        return pack  # type: ignore[return-value]
 
     @property
     def ignored_errors(self) -> List[str]:
@@ -119,28 +171,6 @@ class ContentItem(BaseContent):
     @property
     def pack_version(self) -> Optional[Version]:
         return self.in_pack.pack_version if self.in_pack else None
-
-    @property
-    def in_pack(self) -> Optional["Pack"]:
-        """
-        This returns the Pack which the content item is in.
-
-        Returns:
-            Pack: Pack model.
-        """
-        pack = self.pack
-        if not pack or isinstance(pack, fields.FieldInfo):
-            pack = None
-            if in_pack := self.relationships_data[RelationshipType.IN_PACK]:
-                pack = next(iter(in_pack)).content_item_to  # type: ignore[return-value]
-        if not pack:
-            if pack_name := get_pack_name(self.path):
-                pack = BaseContent.from_path(
-                    CONTENT_PATH / PACKS_FOLDER / pack_name, metadata_only=True
-                )  # type: ignore[assignment]
-        if pack:
-            self.pack = pack
-        return pack  # type: ignore[return-value]
 
     @property
     def uses(self) -> List["RelationshipData"]:
@@ -246,7 +276,13 @@ class ContentItem(BaseContent):
         if not self.path.exists():
             raise FileNotFoundError(f"Could not find file {self.path}")
         data = self.data
-        logger.debug(f"preparing {self.path}")
+        # Replace incorrect marketplace references
+        data = replace_marketplace_references(data, current_marketplace, str(self.path))
+        if current_marketplace == MarketplaceVersions.PLATFORM:
+            data = append_supported_modules(data, self.supportedModules)
+        else:
+            if "supportedModules" in data:
+                del data["supportedModules"]
         return MarketplaceSuffixPreparer.prepare(data, current_marketplace)
 
     def summary(
@@ -274,7 +310,10 @@ class ContentItem(BaseContent):
             if incident_to_alert:
                 summary_res.update(
                     {
-                        "id": replace_incident_to_alert(summary_res["id"]),
+                        "id": replace_incident_to_alert(summary_res["id"])
+                        if self.content_type
+                        not in CONTENT_ITEMS_TO_SKIP_ID_MODIFICATION
+                        else summary_res["id"],
                         "name": replace_incident_to_alert(summary_res["name"]),
                         "description": replace_incident_to_alert(
                             summary_res["description"]
@@ -292,6 +331,7 @@ class ContentItem(BaseContent):
             "fromversion",
             "toversion",
             "deprecated",
+            "supportedModules",
         }
 
     @property
@@ -310,15 +350,7 @@ class ContentItem(BaseContent):
         for _ in range(2):
             # we iterate twice to handle cases of doubled prefixes like `classifier-mapper-`
             for prefix in server_names:
-                try:
-                    name = name.removeprefix(f"{prefix}-")  # type: ignore[attr-defined]
-                except AttributeError:
-                    # not supported in python 3.8
-                    name = (
-                        name[len(prefix) + 1 :]
-                        if name.startswith(f"{prefix}-")
-                        else name
-                    )
+                name = name.removeprefix(f"{prefix}-")
         normalized = f"{self.content_type.server_name}-{name}"
         logger.debug(f"Normalized file name from {name} to {normalized}")
         return normalized
@@ -338,6 +370,7 @@ class ContentItem(BaseContent):
                 data=self.prepare_for_upload(current_marketplace=marketplace),
                 handler=self.handler,
             )
+            logger.debug(f"path to dumped file: {str(dir / self.normalize_name)}")
         except FileNotFoundError as e:
             logger.warning(f"Failed to dump {self.path} to {dir}: {e}")
 

@@ -1,5 +1,7 @@
-from typing import Any, List, Literal, Optional, Union
+from pathlib import Path
+from typing import Any, List, Literal, Optional, Tuple, Union
 
+import more_itertools
 from pydantic import BaseModel, Field
 
 from demisto_sdk.commands.common.constants import (
@@ -18,6 +20,7 @@ from demisto_sdk.commands.content_graph.strict_objects.common import (
     NAME_DYNAMIC_MODEL,
     REQUIRED_DYNAMIC_MODEL,
     BaseStrictModel,
+    create_dynamic_model,
     create_model,
 )
 
@@ -37,6 +40,8 @@ CommonFields = create_model(
 
 class _Argument(BaseStrictModel):
     name: str
+    prettyname: Optional[str] = None
+    pretty_predefined: Optional[dict] = Field(None, alias="prettypredefined")
     required: Optional[bool] = None
     default: Optional[bool] = None
     description: str
@@ -49,6 +54,13 @@ class _Argument(BaseStrictModel):
     hidden: Optional[bool] = None
 
 
+HIDDEN_MARKETPLACE_V2_DYNAMIC_MODEL = create_dynamic_model(
+    field_name="hidden",
+    type_=Optional[bool],
+    default=None,
+    suffixes=[MarketplaceVersions.MarketplaceV2.value],
+)
+
 Argument = create_model(
     model_name="Argument",
     base_models=(
@@ -58,6 +70,7 @@ Argument = create_model(
         DESCRIPTION_DYNAMIC_MODEL,
         DEPRECATED_DYNAMIC_MODEL,
         DEFAULT_DYNAMIC_MODEL,
+        HIDDEN_MARKETPLACE_V2_DYNAMIC_MODEL,
     ),
 )
 
@@ -99,10 +112,26 @@ class ScriptType(StrEnum):
 class StructureError(BaseStrictModel):
     """Used for wrapping Pydantic errors, not part of content."""
 
-    field_name: Optional[tuple] = Field(None, alias="loc")
-    error_message: Optional[str] = Field(None, alias="msg")
-    error_type: Optional[str] = Field(None, alias="type")
+    path: Path
+    field_name: Tuple[str, ...] = Field(alias="loc")
+    error_message: str = Field(alias="msg")
+    error_type: str = Field(alias="type")
     ctx: Optional[dict] = None
+
+    def __str__(self):
+        field_name = ",".join(more_itertools.always_iterable(self.field_name))
+        if self.error_type == "assertion_error":
+            error_message = (
+                self.error_message
+                or f"An assertion error occurred for field {field_name}"
+            )
+        elif self.error_type == "value_error.extra":
+            error_message = f"The field {field_name} is extra and {self.error_message}"
+        elif self.error_type == "value_error.missing":
+            error_message = f"The field {field_name} is required but missing"
+        else:
+            error_message = self.error_message or ""
+        return f"Structure error ({self.error_type}) in field {field_name} of {self.path.name}: {error_message}"
 
 
 class _BaseIntegrationScript(BaseStrictModel):
@@ -114,6 +143,7 @@ class _BaseIntegrationScript(BaseStrictModel):
         None, alias="autoUpdateDockerImage"
     )
     marketplaces: Optional[Union[MarketplaceVersions, List[MarketplaceVersions]]] = None
+    supportedModules: Optional[List[str]] = Field(None, alias="supportedModules")
 
 
 BaseIntegrationScript = create_model(
@@ -177,7 +207,6 @@ StrictGenericIncidentType = create_model(
         BaseOptionalVersionJson,
     ),
 )
-
 
 OPERATORS = Union["Filter", "Or", "And"]
 

@@ -15,6 +15,7 @@ from demisto_sdk.commands.content_graph.common import ContentType, RelationshipT
 from demisto_sdk.commands.content_graph.parsers.yaml_content_item import (
     YAMLContentItemParser,
 )
+from demisto_sdk.commands.content_graph.strict_objects.playbook import StrictPlaybook
 
 LIST_COMMANDS = ["Builtin|||setList", "Builtin|||getList"]
 IGNORED_FIELDS = [
@@ -36,6 +37,7 @@ class BasePlaybookParser(YAMLContentItemParser, content_type=ContentType.BASE_PL
         self,
         path: Path,
         pack_marketplaces: List[MarketplaceVersions],
+        pack_supported_modules: List[str],
         is_test_playbook: bool = False,
         git_sha: Optional[str] = None,
     ) -> None:
@@ -45,7 +47,10 @@ class BasePlaybookParser(YAMLContentItemParser, content_type=ContentType.BASE_PL
             path (Path): The playbook path.
             is_test_playbook (bool, optional): Whether this is a test playbook or not. Defaults to False.
         """
-        super().__init__(path, pack_marketplaces, git_sha=git_sha)
+        super().__init__(
+            path, pack_marketplaces, pack_supported_modules, git_sha=git_sha
+        )
+        self.tags: List[str] = self.yml_data.get("tags", [])
         self.is_test: bool = is_test_playbook
         self.graph: networkx.DiGraph = build_tasks_graph(self.yml_data)
         self.connect_to_dependencies()
@@ -215,3 +220,7 @@ class BasePlaybookParser(YAMLContentItemParser, content_type=ContentType.BASE_PL
             self.handle_script_task(task, is_mandatory)
             self.handle_command_task(task, is_mandatory)
             self.handle_field_mapping(task, is_mandatory)
+
+    @property
+    def strict_object(self):
+        return StrictPlaybook  # both for Playbooks and TPBs

@@ -7,6 +7,7 @@ from demisto_sdk.commands.content_graph.common import ContentType
 from demisto_sdk.commands.content_graph.parsers.json_content_item import (
     JSONContentItemParser,
 )
+from demisto_sdk.commands.content_graph.strict_objects.wizard import StrictWizard
 
 json = JSON_Handler()
 
@@ -16,9 +17,12 @@ class WizardParser(JSONContentItemParser, content_type=ContentType.WIZARD):
         self,
         path: Path,
         pack_marketplaces: List[MarketplaceVersions],
+        pack_supported_modules: List[str],
         git_sha: Optional[str] = None,
     ) -> None:
-        super().__init__(path, pack_marketplaces, git_sha=git_sha)
+        super().__init__(
+            path, pack_marketplaces, pack_supported_modules, git_sha=git_sha
+        )
         self.dependency_packs: str = json.dumps(
             self.json_data.get("dependency_packs") or []
         )
@@ -32,6 +36,7 @@ class WizardParser(JSONContentItemParser, content_type=ContentType.WIZARD):
             MarketplaceVersions.XSOAR,
             MarketplaceVersions.XSOAR_SAAS,
             MarketplaceVersions.XSOAR_ON_PREM,
+            MarketplaceVersions.PLATFORM,
         }
 
     def get_packs(self) -> List[str]:
@@ -55,3 +60,7 @@ class WizardParser(JSONContentItemParser, content_type=ContentType.WIZARD):
         for playbook in self.json_data.get("wizard", {}).get("set_playbook", []):
             playbooks.append(playbook.get("name"))
         return playbooks
+
+    @property
+    def strict_object(self):
+        return StrictWizard

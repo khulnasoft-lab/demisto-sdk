@@ -6,6 +6,7 @@ from demisto_sdk.commands.content_graph.common import ContentType
 from demisto_sdk.commands.content_graph.parsers.json_content_item import (
     JSONContentItemParser,
 )
+from demisto_sdk.commands.content_graph.strict_objects.widget import StrictWidget
 
 
 class WidgetParser(JSONContentItemParser, content_type=ContentType.WIDGET):
@@ -13,9 +14,12 @@ class WidgetParser(JSONContentItemParser, content_type=ContentType.WIDGET):
         self,
         path: Path,
         pack_marketplaces: List[MarketplaceVersions],
+        pack_supported_modules: List[str],
         git_sha: Optional[str] = None,
     ) -> None:
-        super().__init__(path, pack_marketplaces, git_sha=git_sha)
+        super().__init__(
+            path, pack_marketplaces, pack_supported_modules, git_sha=git_sha
+        )
         self.data_type = self.json_data.get("dataType") or ""
         self.widget_type = self.json_data.get("widgetType") or ""
 
@@ -34,3 +38,7 @@ class WidgetParser(JSONContentItemParser, content_type=ContentType.WIDGET):
         if self.data_type == "scripts":
             if script := self.json_data.get("query"):
                 self.add_dependency_by_id(script, ContentType.SCRIPT)
+
+    @property
+    def strict_object(self):
+        return StrictWidget
